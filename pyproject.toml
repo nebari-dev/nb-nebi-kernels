@@ -88,7 +88,7 @@ typecheck = "mypy src"
 [tool.pixi.feature.e2e.tasks]
 # Copy jupyter config for editable installs (shared-data is wheel-only)
 dev-enable = "cp src/nb_nebi_kernels/jupyter-config/jupyter_server_config.d/nb_nebi_kernels.json $CONDA_PREFIX/etc/jupyter/jupyter_server_config.d/nb_nebi_kernels.json"
-lab = { cmd = "jupyter lab", depends-on = ["dev-enable"] }
+lab = "jupyter lab --ServerApp.kernel_spec_manager_class=nb_nebi_kernels.NebiKernelSpecManager"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
