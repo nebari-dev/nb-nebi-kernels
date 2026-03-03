@@ -4264,7 +4264,7 @@ packages:
 - pypi: ./
   name: nb-nebi-kernels
   version: 0.1.0
-  sha256: 1e448f332fe7c2b9886ee0619193e3dbdab72bedb967b2fb81a203af152d44b5
+  sha256: bb54f36f120b5bbdc7d864410981e01d96e6dfda69305a15661d214f50965461
   requires_dist:
   - jupyter-client>=8.0.0
   - jupyter-core>=5.0.0
