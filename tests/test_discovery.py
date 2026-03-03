@@ -1,5 +1,6 @@
 """Tests for workspace and environment discovery."""
 
+import json
 from unittest.mock import MagicMock, patch
 
 from nb_nebi_kernels.discovery import (
@@ -80,20 +81,19 @@ class TestDiscoverEnvironments:
     """Tests for discover_environments()."""
 
     def test_lists_environments_for_workspace(self) -> None:
-        """Parses the structured output of pixi workspace environment list."""
-        mock_output = (
-            "Environments:\n"
-            "- default:\n"
-            "    features: default\n"
-            "- gpu:\n"
-            "    features: gpu, default\n"
-        )
+        """Parses pixi info --json to extract environment names."""
+        mock_json = json.dumps({
+            "environments_info": [
+                {"name": "default", "features": ["default"]},
+                {"name": "gpu", "features": ["gpu", "default"]},
+            ]
+        })
         with (
             patch("nb_nebi_kernels.discovery.subprocess.run") as mock_run,
             patch("nb_nebi_kernels.discovery._find_manifest", return_value="/mock/pixi.toml"),
         ):
             mock_run.return_value = MagicMock(
-                returncode=0, stdout=mock_output, stderr=""
+                returncode=0, stdout=mock_json, stderr=""
             )
             envs = discover_environments("/home/user/data-science")
 

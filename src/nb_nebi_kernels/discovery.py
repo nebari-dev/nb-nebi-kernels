@@ -105,7 +105,8 @@ def _find_manifest(workspace_path: str) -> str:
 def discover_environments(workspace_path: str) -> list[str]:
     """Discover pixi environments in a workspace.
 
-    Calls ``pixi workspace environment list`` for the given workspace.
+    Calls ``pixi info --json`` and extracts environment names from
+    the ``environments_info`` array.
 
     Args:
         workspace_path: Absolute path to the workspace directory.
@@ -114,59 +115,37 @@ def discover_environments(workspace_path: str) -> list[str]:
         List of environment names. Falls back to ``["default"]``
         if pixi is not installed or the command fails.
     """
+    import json
+
     manifest = _find_manifest(workspace_path)
 
     try:
         result = subprocess.run(
-            [
-                "pixi",
-                "workspace",
-                "environment",
-                "list",
-                "--manifest-path",
-                manifest,
-            ],
+            ["pixi", "info", "--json", "--manifest-path", manifest],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=30,
         )
     except FileNotFoundError:
         logger.warning("pixi CLI not found on PATH — falling back to default environment")
         return ["default"]
     except subprocess.TimeoutExpired:
-        logger.warning("pixi workspace environment list timed out for %s", workspace_path)
+        logger.warning("pixi info timed out for %s", workspace_path)
         return ["default"]
 
     if result.returncode != 0:
         logger.debug(
-            "pixi workspace environment list failed for %s: %s",
+            "pixi info failed for %s: %s",
             workspace_path,
             result.stderr.strip(),
         )
         return ["default"]
 
-    return _parse_environment_list(result.stdout)
-
-
-def _parse_environment_list(output: str) -> list[str]:
-    """Parse the output of ``pixi workspace environment list``.
-
-    Expected format::
-
-        Environments:
-        - default:
-            features: default
-        - gpu:
-            features: gpu, default
-
-    Extracts environment names from lines matching ``- name:``.
-    """
-    import re
-
-    envs: list[str] = []
-    for line in output.splitlines():
-        match = re.match(r"^- (\S+?):\s*$", line.strip())
-        if match:
-            envs.append(match.group(1))
+    try:
+        data = json.loads(result.stdout)
+        envs = [env["name"] for env in data.get("environments_info", [])]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        logger.debug("Failed to parse pixi info JSON for %s", workspace_path)
+        return ["default"]
 
     return envs if envs else ["default"]
