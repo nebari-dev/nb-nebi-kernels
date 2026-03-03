@@ -88,6 +88,20 @@ def _parse_workspace_list(output: str) -> list[NebiWorkspace]:
     return workspaces
 
 
+def _find_manifest(workspace_path: str) -> str:
+    """Find the pixi manifest file in a workspace directory.
+
+    Checks for ``pixi.toml`` first, then ``pyproject.toml``.
+    """
+    import os
+
+    for name in ("pixi.toml", "pyproject.toml"):
+        path = os.path.join(workspace_path, name)
+        if os.path.exists(path):
+            return path
+    return os.path.join(workspace_path, "pixi.toml")
+
+
 def discover_environments(workspace_path: str) -> list[str]:
     """Discover pixi environments in a workspace.
 
@@ -100,6 +114,8 @@ def discover_environments(workspace_path: str) -> list[str]:
         List of environment names. Falls back to ``["default"]``
         if pixi is not installed or the command fails.
     """
+    manifest = _find_manifest(workspace_path)
+
     try:
         result = subprocess.run(
             [
@@ -108,7 +124,7 @@ def discover_environments(workspace_path: str) -> list[str]:
                 "environment",
                 "list",
                 "--manifest-path",
-                f"{workspace_path}/pixi.toml",
+                manifest,
             ],
             capture_output=True,
             text=True,
@@ -129,5 +145,28 @@ def discover_environments(workspace_path: str) -> list[str]:
         )
         return ["default"]
 
-    envs = [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
+    return _parse_environment_list(result.stdout)
+
+
+def _parse_environment_list(output: str) -> list[str]:
+    """Parse the output of ``pixi workspace environment list``.
+
+    Expected format::
+
+        Environments:
+        - default:
+            features: default
+        - gpu:
+            features: gpu, default
+
+    Extracts environment names from lines matching ``- name:``.
+    """
+    import re
+
+    envs: list[str] = []
+    for line in output.splitlines():
+        match = re.match(r"^- (\S+?):\s*$", line.strip())
+        if match:
+            envs.append(match.group(1))
+
     return envs if envs else ["default"]

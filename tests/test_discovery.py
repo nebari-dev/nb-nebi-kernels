@@ -80,9 +80,18 @@ class TestDiscoverEnvironments:
     """Tests for discover_environments()."""
 
     def test_lists_environments_for_workspace(self) -> None:
-        """Calls pixi workspace environment list and parses output."""
-        mock_output = "default\ngpu\n"
-        with patch("nb_nebi_kernels.discovery.subprocess.run") as mock_run:
+        """Parses the structured output of pixi workspace environment list."""
+        mock_output = (
+            "Environments:\n"
+            "- default:\n"
+            "    features: default\n"
+            "- gpu:\n"
+            "    features: gpu, default\n"
+        )
+        with (
+            patch("nb_nebi_kernels.discovery.subprocess.run") as mock_run,
+            patch("nb_nebi_kernels.discovery._find_manifest", return_value="/mock/pixi.toml"),
+        ):
             mock_run.return_value = MagicMock(
                 returncode=0, stdout=mock_output, stderr=""
             )
@@ -92,7 +101,10 @@ class TestDiscoverEnvironments:
 
     def test_returns_default_on_error(self) -> None:
         """Falls back to ['default'] if pixi command fails."""
-        with patch("nb_nebi_kernels.discovery.subprocess.run") as mock_run:
+        with (
+            patch("nb_nebi_kernels.discovery.subprocess.run") as mock_run,
+            patch("nb_nebi_kernels.discovery._find_manifest", return_value="/mock/pixi.toml"),
+        ):
             mock_run.return_value = MagicMock(
                 returncode=1, stdout="", stderr="error"
             )
@@ -102,7 +114,10 @@ class TestDiscoverEnvironments:
 
     def test_returns_default_when_pixi_not_found(self) -> None:
         """Falls back to ['default'] if pixi is not installed."""
-        with patch("nb_nebi_kernels.discovery.subprocess.run") as mock_run:
+        with (
+            patch("nb_nebi_kernels.discovery.subprocess.run") as mock_run,
+            patch("nb_nebi_kernels.discovery._find_manifest", return_value="/mock/pixi.toml"),
+        ):
             mock_run.side_effect = FileNotFoundError("pixi not found")
             envs = discover_environments("/home/user/data-science")
 
