@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 from dataclasses import dataclass
@@ -20,8 +21,7 @@ class NebiWorkspace:
 def discover_workspaces() -> list[NebiWorkspace]:
     """Discover locally-tracked nebi workspaces.
 
-    Calls ``nebi workspace list`` and parses the table output.
-    Filters out workspaces marked as missing.
+    Calls ``nebi workspace list --json`` and filters out missing workspaces.
 
     Returns:
         List of discovered workspaces. Empty list if nebi is not
@@ -29,7 +29,7 @@ def discover_workspaces() -> list[NebiWorkspace]:
     """
     try:
         result = subprocess.run(
-            ["nebi", "workspace", "list"],
+            ["nebi", "workspace", "list", "--json"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -45,45 +45,21 @@ def discover_workspaces() -> list[NebiWorkspace]:
         logger.warning("nebi workspace list failed: %s", result.stderr.strip())
         return []
 
-    return _parse_workspace_list(result.stdout)
+    try:
+        data = json.loads(result.stdout)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("Failed to parse nebi workspace list JSON")
+        return []
 
-
-def _parse_workspace_list(output: str) -> list[NebiWorkspace]:
-    """Parse the table output of ``nebi workspace list``.
-
-    Expected format::
-
-        NAME        PATH
-        workspace1  /path/to/workspace1
-        workspace2  /path/to/workspace2 (missing)
-
-    Workspaces with ``(missing)`` suffix on the path are filtered out.
-    """
     workspaces: list[NebiWorkspace] = []
-
-    lines = output.strip().splitlines()
-    if len(lines) < 2:
-        return workspaces
-
-    for line in lines[1:]:  # skip header
-        line = line.strip()
-        if not line:
+    for ws in data:
+        if ws.get("missing", False):
+            logger.debug("Skipping missing workspace: %s", ws.get("name"))
             continue
-
-        # Split on whitespace — name is first token, path is the rest
-        parts = line.split(None, 1)
-        if len(parts) < 2:
-            continue
-
-        name = parts[0]
-        path = parts[1].strip()
-
-        # Filter out missing workspaces
-        if path.endswith("(missing)"):
-            logger.debug("Skipping missing workspace: %s", name)
-            continue
-
-        workspaces.append(NebiWorkspace(name=name, path=path))
+        name = ws.get("name", "")
+        path = ws.get("path", "")
+        if name and path:
+            workspaces.append(NebiWorkspace(name=name, path=path))
 
     return workspaces
 

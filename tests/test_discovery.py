@@ -12,16 +12,15 @@ from nb_nebi_kernels.discovery import (
 class TestDiscoverWorkspaces:
     """Tests for discover_workspaces()."""
 
-    def test_parses_nebi_workspace_list_output(self) -> None:
-        """Parses the NAME/PATH table from nebi workspace list."""
-        mock_output = (
-            "NAME\tPATH\n"
-            "data-science\t/home/user/data-science\n"
-            "web-app\t/home/user/web-app\n"
-        )
+    def test_parses_nebi_json_output(self) -> None:
+        """Parses JSON from nebi workspace list --json."""
+        mock_json = json.dumps([
+            {"name": "data-science", "path": "/home/user/data-science", "missing": False},
+            {"name": "web-app", "path": "/home/user/web-app", "missing": False},
+        ])
         with patch("nb_nebi_kernels.discovery.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
-                returncode=0, stdout=mock_output, stderr=""
+                returncode=0, stdout=mock_json, stderr=""
             )
             workspaces = discover_workspaces()
 
@@ -32,15 +31,14 @@ class TestDiscoverWorkspaces:
         assert workspaces[1].path == "/home/user/web-app"
 
     def test_filters_missing_workspaces(self) -> None:
-        """Workspaces marked (missing) are excluded."""
-        mock_output = (
-            "NAME\tPATH\n"
-            "data-science\t/home/user/data-science\n"
-            "old-project\t/home/user/old-project (missing)\n"
-        )
+        """Workspaces with missing=true are excluded."""
+        mock_json = json.dumps([
+            {"name": "data-science", "path": "/home/user/data-science", "missing": False},
+            {"name": "old-project", "path": "/home/user/old-project", "missing": True},
+        ])
         with patch("nb_nebi_kernels.discovery.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
-                returncode=0, stdout=mock_output, stderr=""
+                returncode=0, stdout=mock_json, stderr=""
             )
             workspaces = discover_workspaces()
 
@@ -66,11 +64,10 @@ class TestDiscoverWorkspaces:
         assert workspaces == []
 
     def test_returns_empty_when_no_workspaces(self) -> None:
-        """Returns empty list when nebi has no tracked workspaces."""
-        mock_output = "No tracked workspaces. Run 'nebi init' in a pixi workspace to get started.\n"
+        """Returns empty list when nebi returns empty JSON array."""
         with patch("nb_nebi_kernels.discovery.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
-                returncode=0, stdout="", stderr=mock_output
+                returncode=0, stdout="[]", stderr=""
             )
             workspaces = discover_workspaces()
 
