@@ -1,0 +1,127 @@
+"""Discover nebi workspaces and their pixi environments."""
+
+from __future__ import annotations
+
+import json
+import logging
+import subprocess
+from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class NebiWorkspace:
+    """A locally-tracked nebi workspace."""
+
+    name: str
+    path: str
+
+
+def discover_workspaces() -> list[NebiWorkspace]:
+    """Discover locally-tracked nebi workspaces.
+
+    Calls ``nebi workspace list --json`` and filters out missing workspaces.
+
+    Returns:
+        List of discovered workspaces. Empty list if nebi is not
+        installed or an error occurs.
+    """
+    try:
+        result = subprocess.run(
+            ["nebi", "workspace", "list", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except FileNotFoundError:
+        logger.warning("nebi CLI not found on PATH — no nebi kernels will be available")
+        return []
+    except subprocess.TimeoutExpired:
+        logger.warning("nebi workspace list timed out")
+        return []
+
+    if result.returncode != 0:
+        logger.warning("nebi workspace list failed: %s", result.stderr.strip())
+        return []
+
+    try:
+        data = json.loads(result.stdout)
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("Failed to parse nebi workspace list JSON")
+        return []
+
+    workspaces: list[NebiWorkspace] = []
+    for ws in data:
+        if ws.get("missing", False):
+            logger.debug("Skipping missing workspace: %s", ws.get("name"))
+            continue
+        name = ws.get("name", "")
+        path = ws.get("path", "")
+        if name and path:
+            workspaces.append(NebiWorkspace(name=name, path=path))
+
+    return workspaces
+
+
+def _find_manifest(workspace_path: str) -> str:
+    """Find the pixi manifest file in a workspace directory.
+
+    Checks for ``pixi.toml`` first, then ``pyproject.toml``.
+    """
+    import os
+
+    for name in ("pixi.toml", "pyproject.toml"):
+        path = os.path.join(workspace_path, name)
+        if os.path.exists(path):
+            return path
+    return os.path.join(workspace_path, "pixi.toml")
+
+
+def discover_environments(workspace_path: str) -> list[str]:
+    """Discover pixi environments in a workspace.
+
+    Calls ``pixi info --json`` and extracts environment names from
+    the ``environments_info`` array.
+
+    Args:
+        workspace_path: Absolute path to the workspace directory.
+
+    Returns:
+        List of environment names. Falls back to ``["default"]``
+        if pixi is not installed or the command fails.
+    """
+    import json
+
+    manifest = _find_manifest(workspace_path)
+
+    try:
+        result = subprocess.run(
+            ["pixi", "info", "--json", "--manifest-path", manifest],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except FileNotFoundError:
+        logger.warning("pixi CLI not found on PATH — falling back to default environment")
+        return ["default"]
+    except subprocess.TimeoutExpired:
+        logger.warning("pixi info timed out for %s", workspace_path)
+        return ["default"]
+
+    if result.returncode != 0:
+        logger.debug(
+            "pixi info failed for %s: %s",
+            workspace_path,
+            result.stderr.strip(),
+        )
+        return ["default"]
+
+    try:
+        data = json.loads(result.stdout)
+        envs = [env["name"] for env in data.get("environments_info", [])]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        logger.debug("Failed to parse pixi info JSON for %s", workspace_path)
+        return ["default"]
+
+    return envs if envs else ["default"]
