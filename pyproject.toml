@@ -1,6 +1,6 @@
 [project]
 name = "nb-nebi-kernels"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Jupyter KernelSpecManager that discovers kernels from nebi-tracked pixi workspaces"
 readme = "README.md"
 license = "MIT"
@@ -31,8 +31,14 @@ Homepage = "https://github.com/nebari-dev/nb-nebi-kernels"
 Repository = "https://github.com/nebari-dev/nb-nebi-kernels"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/nb_nebi_kernels/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/nb_nebi_kernels"]
