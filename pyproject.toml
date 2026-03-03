@@ -26,9 +26,6 @@ dependencies = [
     "jupyter_server>=2.0.0",
 ]
 
-[project.scripts]
-nb-nebi-kernels = "nb_nebi_kernels.install:main"
-
 [project.urls]
 Homepage = "https://github.com/nebari-dev/nb-nebi-kernels"
 Repository = "https://github.com/nebari-dev/nb-nebi-kernels"
@@ -39,6 +36,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/nb_nebi_kernels"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"src/nb_nebi_kernels/jupyter-config/jupyter_server_config.d/nb_nebi_kernels.json" = "etc/jupyter/jupyter_server_config.d/nb_nebi_kernels.json"
 
 [tool.pixi.project]
 channels = ["conda-forge"]
@@ -76,18 +76,17 @@ lint = { features = ["lint"], solve-group = "default" }
 dev = { features = ["dev"], solve-group = "default" }
 e2e = { features = ["e2e"], solve-group = "default" }
 
-[tool.pixi.tasks]
+[tool.pixi.feature.test.tasks]
 test = { cmd = "pytest", depends-on = [] }
 test-cov = { cmd = "pytest --cov=src/nb_nebi_kernels --cov-report=term-missing", depends-on = [] }
+
+[tool.pixi.feature.lint.tasks]
 lint = "ruff check src tests"
 format = "ruff format src tests"
 typecheck = "mypy src"
 
 [tool.pixi.feature.e2e.tasks]
 lab = "jupyter lab"
-enable = "nb-nebi-kernels --enable"
-disable = "nb-nebi-kernels --disable"
-status = "nb-nebi-kernels --status"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

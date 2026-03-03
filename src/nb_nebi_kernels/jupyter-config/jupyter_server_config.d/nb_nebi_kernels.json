@@ -1,0 +1,5 @@
+{
+  "ServerApp": {
+    "kernel_spec_manager_class": "nb_nebi_kernels.NebiKernelSpecManager"
+  }
+}

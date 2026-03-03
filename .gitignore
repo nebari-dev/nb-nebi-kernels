@@ -19,6 +19,13 @@ build/
 htmlcov/
 .pytest_cache/
 
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Nested repos
+nebi/
+
 # OS
 .DS_Store
 # pixi environments
