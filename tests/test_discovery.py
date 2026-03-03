@@ -1,14 +1,10 @@
 """Tests for workspace and environment discovery."""
 
-import subprocess
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from nb_nebi_kernels.discovery import (
-    NebiWorkspace,
-    discover_workspaces,
     discover_environments,
+    discover_workspaces,
 )
 
 
@@ -17,7 +13,11 @@ class TestDiscoverWorkspaces:
 
     def test_parses_nebi_workspace_list_output(self) -> None:
         """Parses the NAME/PATH table from nebi workspace list."""
-        mock_output = "NAME\tPATH\ndata-science\t/home/user/data-science\nweb-app\t/home/user/web-app\n"
+        mock_output = (
+            "NAME\tPATH\n"
+            "data-science\t/home/user/data-science\n"
+            "web-app\t/home/user/web-app\n"
+        )
         with patch("nb_nebi_kernels.discovery.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0, stdout=mock_output, stderr=""
@@ -32,7 +32,11 @@ class TestDiscoverWorkspaces:
 
     def test_filters_missing_workspaces(self) -> None:
         """Workspaces marked (missing) are excluded."""
-        mock_output = "NAME\tPATH\ndata-science\t/home/user/data-science\nold-project\t/home/user/old-project (missing)\n"
+        mock_output = (
+            "NAME\tPATH\n"
+            "data-science\t/home/user/data-science\n"
+            "old-project\t/home/user/old-project (missing)\n"
+        )
         with patch("nb_nebi_kernels.discovery.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0, stdout=mock_output, stderr=""

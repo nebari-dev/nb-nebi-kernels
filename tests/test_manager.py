@@ -96,7 +96,7 @@ class TestNebiKernelSpecManager:
     def test_display_name_format(
         self, sample_workspaces: list[NebiWorkspace], sample_envs_map: dict[str, list[str]]
     ) -> None:
-        """Display name is 'workspace (env)' for non-default, just 'workspace' for default when only env."""
+        """Display name format: 'workspace (env)' or just 'workspace' for default."""
         with (
             patch("nb_nebi_kernels.manager.discover_workspaces", return_value=sample_workspaces),
             patch(

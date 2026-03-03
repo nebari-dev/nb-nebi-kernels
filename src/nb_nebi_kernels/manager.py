@@ -93,7 +93,7 @@ class NebiKernelSpecManager(KernelSpecManager):  # type: ignore[misc]
 
         self._discover()
 
-        for kernel_name, (ws, env) in self._kernel_registry.items():
+        for kernel_name, (ws, _env) in self._kernel_registry.items():
             specs[kernel_name] = ws.path
 
         return specs

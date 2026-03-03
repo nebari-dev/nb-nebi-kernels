@@ -22,7 +22,7 @@ class TestLauncher:
             patch("sys.argv", ["launcher", "/tmp/ws", "default", "/tmp/conn.json"]),
             patch.dict(os.environ, {v: "val" for v in PIXI_ENV_VARS_TO_CLEAR}),
             patch("nb_nebi_kernels.launcher.os.chdir"),
-            patch("nb_nebi_kernels.launcher.os.execvp") as mock_exec,
+            patch("nb_nebi_kernels.launcher.os.execvp"),
         ):
             main()
 
@@ -96,6 +96,8 @@ class TestLauncher:
 
     def test_exits_on_wrong_args(self) -> None:
         """Launcher exits with code 1 if wrong number of args."""
-        with patch("sys.argv", ["launcher", "/tmp/ws"]):
-            with pytest.raises(SystemExit, match="1"):
-                main()
+        with (
+            patch("sys.argv", ["launcher", "/tmp/ws"]),
+            pytest.raises(SystemExit, match="1"),
+        ):
+            main()
