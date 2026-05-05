@@ -35,6 +35,7 @@ class TestNebiKernelSpecManager:
         """find_kernel_specs returns one entry per (workspace, env) pair."""
         with (
             patch("nb_nebi_kernels.manager.discover_workspaces", return_value=sample_workspaces),
+            patch("nb_nebi_kernels.manager.discover_remote_workspaces", return_value=[]),
             patch(
                 "nb_nebi_kernels.manager.discover_environments",
                 side_effect=lambda p: sample_envs_map[p],
@@ -54,6 +55,7 @@ class TestNebiKernelSpecManager:
         """find_kernel_specs also includes standard kernels from parent."""
         with (
             patch("nb_nebi_kernels.manager.discover_workspaces", return_value=sample_workspaces),
+            patch("nb_nebi_kernels.manager.discover_remote_workspaces", return_value=[]),
             patch(
                 "nb_nebi_kernels.manager.discover_environments",
                 side_effect=lambda p: sample_envs_map[p],
@@ -75,6 +77,7 @@ class TestNebiKernelSpecManager:
         """get_kernel_spec returns a KernelSpec with correct argv for pixi launch."""
         with (
             patch("nb_nebi_kernels.manager.discover_workspaces", return_value=sample_workspaces),
+            patch("nb_nebi_kernels.manager.discover_remote_workspaces", return_value=[]),
             patch(
                 "nb_nebi_kernels.manager.discover_environments",
                 side_effect=lambda p: sample_envs_map[p],
@@ -99,6 +102,7 @@ class TestNebiKernelSpecManager:
         """Display name format: 'workspace (env)' or just 'workspace' for default."""
         with (
             patch("nb_nebi_kernels.manager.discover_workspaces", return_value=sample_workspaces),
+            patch("nb_nebi_kernels.manager.discover_remote_workspaces", return_value=[]),
             patch(
                 "nb_nebi_kernels.manager.discover_environments",
                 side_effect=lambda p: sample_envs_map[p],
@@ -119,6 +123,7 @@ class TestNebiKernelSpecManager:
         """get_kernel_spec delegates to parent for non-nebi kernels."""
         with (
             patch("nb_nebi_kernels.manager.discover_workspaces", return_value=sample_workspaces),
+            patch("nb_nebi_kernels.manager.discover_remote_workspaces", return_value=[]),
             patch(
                 "nb_nebi_kernels.manager.discover_environments",
                 side_effect=lambda p: sample_envs_map[p],
@@ -132,7 +137,10 @@ class TestNebiKernelSpecManager:
 
     def test_returns_empty_when_no_workspaces(self) -> None:
         """find_kernel_specs returns only parent kernels when nebi has no workspaces."""
-        with patch("nb_nebi_kernels.manager.discover_workspaces", return_value=[]):
+        with (
+            patch("nb_nebi_kernels.manager.discover_workspaces", return_value=[]),
+            patch("nb_nebi_kernels.manager.discover_remote_workspaces", return_value=[]),
+        ):
             manager = NebiKernelSpecManager()
             specs = manager.find_kernel_specs()
 
@@ -143,3 +151,112 @@ class TestNebiKernelSpecManager:
         assert NebiKernelSpecManager.clean_kernel_name("data-science") == "data-science"
         assert NebiKernelSpecManager.clean_kernel_name("my project!") == "my_project_"
         assert NebiKernelSpecManager.clean_kernel_name("café") == "cafe"
+
+    def test_remote_workspace_is_marked_not_pulled(self) -> None:
+        """Remote-only workspaces appear with remote-not-pulled state metadata."""
+        remote = NebiWorkspace(
+            name="remote-only",
+            path="",
+            remote_version="v5",
+            environments=["default", "gpu"],
+            source="remote",
+        )
+        with (
+            patch("nb_nebi_kernels.manager.discover_workspaces", return_value=[]),
+            patch("nb_nebi_kernels.manager.discover_remote_workspaces", return_value=[remote]),
+        ):
+            manager = NebiKernelSpecManager()
+            specs = manager.find_kernel_specs()
+            spec = manager.get_kernel_spec("nebi-remote-only-default")
+
+        assert "nebi-remote-only-gpu" in specs
+        assert spec.metadata["nebi_state"] == "remote-not-pulled"
+        assert spec.metadata["nebi_not_ready_reason"] == "workspace-not-pulled"
+        assert spec.metadata["nebi"]["state"] == "remote-not-pulled"
+
+    def test_local_workspace_state_not_installed(self) -> None:
+        """Local workspace env is marked local-not-installed when probe fails install check."""
+        local = NebiWorkspace(name="project", path="/tmp/project", local_version="v1")
+        with (
+            patch("nb_nebi_kernels.manager.discover_workspaces", return_value=[local]),
+            patch("nb_nebi_kernels.manager.discover_remote_workspaces", return_value=[]),
+            patch("nb_nebi_kernels.manager.discover_environments", return_value=["default"]),
+            patch("nb_nebi_kernels.manager.probe_environment") as mock_probe,
+        ):
+            mock_probe.return_value.installed = False
+            mock_probe.return_value.missing_dependencies = []
+            mock_probe.return_value.reason = "environment-not-installed"
+            manager = NebiKernelSpecManager()
+            manager.find_kernel_specs()
+            spec = manager.get_kernel_spec("nebi-project-default")
+
+        assert spec.metadata["nebi_state"] == "local-not-installed"
+        assert spec.metadata["nebi_not_ready_reason"] == "environment-not-installed"
+        assert spec.metadata["nebi_logo_reason"] == "environment-not-installed"
+
+    def test_local_workspace_state_missing_dependencies(self) -> None:
+        """Local workspace env is marked local-missing-deps when required deps are absent."""
+        local = NebiWorkspace(name="project", path="/tmp/project", local_version="v1")
+        with (
+            patch("nb_nebi_kernels.manager.discover_workspaces", return_value=[local]),
+            patch("nb_nebi_kernels.manager.discover_remote_workspaces", return_value=[]),
+            patch("nb_nebi_kernels.manager.discover_environments", return_value=["default"]),
+            patch("nb_nebi_kernels.manager.probe_environment") as mock_probe,
+        ):
+            mock_probe.return_value.installed = True
+            mock_probe.return_value.missing_dependencies = ["ipykernel"]
+            mock_probe.return_value.reason = None
+            manager = NebiKernelSpecManager()
+            manager.find_kernel_specs()
+            spec = manager.get_kernel_spec("nebi-project-default")
+
+        assert spec.metadata["nebi_state"] == "local-missing-deps"
+        assert spec.metadata["nebi_missing_dependencies"] == ["ipykernel"]
+        assert spec.metadata["nebi_not_ready_reason"] == "missing-dependencies"
+
+    def test_outdated_state_when_remote_version_differs(self) -> None:
+        """Local workspace is marked outdated when local/ref and remote/ref drift."""
+        local = NebiWorkspace(name="project", path="/tmp/project", local_version="v1")
+        remote = NebiWorkspace(name="project", path="", remote_version="v2", source="remote")
+        with (
+            patch("nb_nebi_kernels.manager.discover_workspaces", return_value=[local]),
+            patch("nb_nebi_kernels.manager.discover_remote_workspaces", return_value=[remote]),
+            patch("nb_nebi_kernels.manager.discover_environments", return_value=["default"]),
+            patch("nb_nebi_kernels.manager.probe_environment") as mock_probe,
+        ):
+            mock_probe.return_value.installed = True
+            mock_probe.return_value.missing_dependencies = []
+            mock_probe.return_value.reason = None
+            manager = NebiKernelSpecManager()
+            manager.find_kernel_specs()
+            spec = manager.get_kernel_spec("nebi-project-default")
+
+        assert spec.metadata["nebi_state"] == "outdated"
+        assert spec.metadata["nebi_local_version"] == "v1"
+        assert spec.metadata["nebi_remote_version"] == "v2"
+        assert spec.metadata["nebi_outdated"] is True
+
+    def test_discovery_hash_and_timestamp_metadata(self) -> None:
+        """Kernel metadata includes deterministic discovery hash and timestamp."""
+        local = NebiWorkspace(name="project", path="/tmp/project")
+        with (
+            patch("nb_nebi_kernels.manager.discover_workspaces", return_value=[local]),
+            patch("nb_nebi_kernels.manager.discover_remote_workspaces", return_value=[]),
+            patch("nb_nebi_kernels.manager.discover_environments", return_value=["default"]),
+            patch("nb_nebi_kernels.manager.probe_environment") as mock_probe,
+        ):
+            mock_probe.return_value.installed = True
+            mock_probe.return_value.missing_dependencies = []
+            mock_probe.return_value.reason = None
+            manager = NebiKernelSpecManager()
+            manager.find_kernel_specs()
+            spec = manager.get_kernel_spec("nebi-project-default")
+
+        discovery_hash = spec.metadata["nebi_discovery_hash"]
+        discovered_at = spec.metadata["nebi_discovered_at"]
+        assert isinstance(discovery_hash, str)
+        assert len(discovery_hash) == 64
+        assert all(c in "0123456789abcdef" for c in discovery_hash)
+        assert isinstance(discovered_at, str)
+        assert discovered_at.endswith("Z")
+        assert "T" in discovered_at
