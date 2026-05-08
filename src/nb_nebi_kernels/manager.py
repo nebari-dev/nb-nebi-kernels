@@ -106,6 +106,18 @@ class NebiKernelSpecManager(KernelSpecManager):  # type: ignore[misc]
             return workspace.name
         return f"{workspace.name} ({env})"
 
+    @staticmethod
+    def _merge_environment_names(
+        primary: list[str] | None, secondary: list[str] | None
+    ) -> list[str]:
+        """Merge environment name lists while preserving order and uniqueness."""
+        merged: list[str] = []
+        for source in (primary or [], secondary or []):
+            for env_name in source:
+                if env_name not in merged:
+                    merged.append(env_name)
+        return merged
+
     def _classify_kernel_state(self, workspace: NebiWorkspace, env: str) -> KernelEntry:
         """Classify kernel state for the given workspace/environment."""
         if workspace.source == "remote" or not workspace.path:
@@ -174,6 +186,9 @@ class NebiKernelSpecManager(KernelSpecManager):  # type: ignore[misc]
             existing = merged.get(remote_ws.name)
             if existing:
                 existing.remote_version = remote_ws.remote_version or existing.remote_version
+                existing.environments = self._merge_environment_names(
+                    existing.environments, remote_ws.environments
+                )
                 continue
 
             merged[remote_ws.name] = NebiWorkspace(
@@ -223,7 +238,9 @@ class NebiKernelSpecManager(KernelSpecManager):  # type: ignore[misc]
 
         for ws in workspaces:
             if ws.source != "remote" and ws.path:
-                envs = discover_environments(ws.path)
+                envs = self._merge_environment_names(
+                    discover_environments(ws.path), ws.environments
+                )
             else:
                 envs = ws.environments or ["default"]
 

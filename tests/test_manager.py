@@ -260,3 +260,28 @@ class TestNebiKernelSpecManager:
         assert isinstance(discovered_at, str)
         assert discovered_at.endswith("Z")
         assert "T" in discovered_at
+
+    def test_local_workspace_merges_remote_environment_variants(self) -> None:
+        """Local workspace kernels include remote-only environment variants by name."""
+        local = NebiWorkspace(name="project", path="/tmp/project", local_version="v1")
+        remote = NebiWorkspace(
+            name="project",
+            path="",
+            remote_version="v2",
+            environments=["default", "gpu"],
+            source="remote",
+        )
+        with (
+            patch("nb_nebi_kernels.manager.discover_workspaces", return_value=[local]),
+            patch("nb_nebi_kernels.manager.discover_remote_workspaces", return_value=[remote]),
+            patch("nb_nebi_kernels.manager.discover_environments", return_value=["default"]),
+            patch("nb_nebi_kernels.manager.probe_environment") as mock_probe,
+        ):
+            mock_probe.return_value.installed = True
+            mock_probe.return_value.missing_dependencies = []
+            mock_probe.return_value.reason = None
+            manager = NebiKernelSpecManager()
+            specs = manager.find_kernel_specs()
+
+        assert "nebi-project-default" in specs
+        assert "nebi-project-gpu" in specs
