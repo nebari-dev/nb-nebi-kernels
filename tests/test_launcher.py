@@ -21,6 +21,7 @@ class TestLauncher:
         with (
             patch("sys.argv", ["launcher", "/tmp/ws", "default", "/tmp/conn.json"]),
             patch.dict(os.environ, {v: "val" for v in PIXI_ENV_VARS_TO_CLEAR}),
+            patch("nb_nebi_kernels.launcher.os.path.isdir", return_value=True),
             patch("nb_nebi_kernels.launcher.os.chdir"),
             patch("nb_nebi_kernels.launcher.os.execvp"),
         ):
@@ -35,6 +36,7 @@ class TestLauncher:
         """Launcher execs pixi run with the correct environment flag."""
         with (
             patch("sys.argv", ["launcher", "/tmp/ws", "gpu", "/tmp/conn.json"]),
+            patch("nb_nebi_kernels.launcher.os.path.isdir", return_value=True),
             patch("nb_nebi_kernels.launcher.os.chdir"),
             patch("nb_nebi_kernels.launcher.os.execvp") as mock_exec,
         ):
@@ -62,6 +64,7 @@ class TestLauncher:
         """Launcher with 'default' environment omits -e flag."""
         with (
             patch("sys.argv", ["launcher", "/tmp/ws", "default", "/tmp/conn.json"]),
+            patch("nb_nebi_kernels.launcher.os.path.isdir", return_value=True),
             patch("nb_nebi_kernels.launcher.os.chdir"),
             patch("nb_nebi_kernels.launcher.os.execvp") as mock_exec,
         ):
@@ -87,6 +90,7 @@ class TestLauncher:
         """Launcher changes to the workspace directory."""
         with (
             patch("sys.argv", ["launcher", "/tmp/ws", "default", "/tmp/conn.json"]),
+            patch("nb_nebi_kernels.launcher.os.path.isdir", return_value=True),
             patch("nb_nebi_kernels.launcher.os.chdir") as mock_chdir,
             patch("nb_nebi_kernels.launcher.os.execvp"),
         ):
@@ -98,6 +102,15 @@ class TestLauncher:
         """Launcher exits with code 1 if wrong number of args."""
         with (
             patch("sys.argv", ["launcher", "/tmp/ws"]),
+            pytest.raises(SystemExit, match="1"),
+        ):
+            main()
+
+    def test_exits_for_non_ready_kernel_state(self) -> None:
+        """Launcher exits early with a clear error for blocked states."""
+        with (
+            patch("sys.argv", ["launcher", "/tmp/ws", "default", "/tmp/conn.json"]),
+            patch.dict(os.environ, {"NB_NEBI_KERNEL_STATE": "remote-not-pulled"}),
             pytest.raises(SystemExit, match="1"),
         ):
             main()
