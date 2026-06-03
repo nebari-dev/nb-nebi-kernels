@@ -39,7 +39,7 @@ def build_message(workspace: str, env: str) -> list[str]:
     ]
 
 
-class StubKernel(Kernel):  # type: ignore[misc]
+class StubKernel(Kernel):
     """A Jupyter kernel that exists only to surface a missing-kernel error.
 
     Override class attributes ``nebi_workspace`` and ``nebi_env`` (typically via
@@ -61,7 +61,7 @@ class StubKernel(Kernel):  # type: ignore[misc]
     nebi_env: str = "<unknown>"
 
     @property
-    def banner(self) -> str:
+    def banner(self) -> str:  # type: ignore[override]
         return (
             f"Nebi stub kernel — pixi env '{self.nebi_env}' in workspace "
             f"'{self.nebi_workspace}' has no Jupyter kernel installed.\n"

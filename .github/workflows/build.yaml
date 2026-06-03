@@ -1,0 +1,135 @@
+name: Build
+
+on:
+  push:
+    branches: main
+  pull_request:
+    branches: '*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Frontend & extension build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # hatch-vcs derives the package version from git history/tags.
+          fetch-depth: 0
+
+      - name: Base Setup
+        uses: jupyterlab/maintainer-tools/.github/actions/base-setup@v1
+
+      - name: Install dependencies
+        run: python -m pip install -U "jupyterlab>=4.0.0,<5"
+
+      - name: Lint the extension
+        run: |
+          set -eux
+          jlpm
+          jlpm run lint:check
+
+      - name: Test the extension (Jest)
+        run: |
+          set -eux
+          jlpm run test
+
+      - name: Build the extension
+        run: |
+          set -eux
+          python -m pip install .
+
+          jupyter labextension list
+          jupyter labextension list 2>&1 | grep -ie "nb-nebi-kernels.*OK"
+          python -m jupyterlab.browser_check
+
+      - name: Package the extension
+        run: |
+          set -eux
+          pip install build
+          python -m build
+          pip uninstall -y "nb-nebi-kernels" jupyterlab
+
+      - name: Upload extension packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-artifacts
+          path: dist/nb_nebi_kernels*
+          if-no-files-found: error
+
+  python-tests:
+    name: Python tests (pytest, ruff, mypy)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # hatch-vcs derives the package version from git history/tags.
+          fetch-depth: 0
+
+      - name: Stub the labextension bundle
+        # Every pixi env installs nb-nebi-kernels editable, which fires the
+        # hatch-jupyter-builder hook (it shells out to jlpm/node). This job has
+        # no Node, and the Python tests don't touch the frontend bundle, so we
+        # pre-create the hook's `skip-if-exists` target to short-circuit the
+        # build. See [tool.hatch.build.hooks.jupyter-builder] in pyproject.toml.
+        run: |
+          mkdir -p src/nb_nebi_kernels/labextension/static
+          echo '/* CI stub: skip labextension build for python-only tests */' \
+            > src/nb_nebi_kernels/labextension/static/style.js
+
+      - name: Set up pixi
+        uses: prefix-dev/setup-pixi@v0.9.6
+        with:
+          environments: >-
+            test
+            lint
+          # Fail if pixi.lock is out of sync with pyproject.toml.
+          locked: true
+          cache: true
+
+      - name: Run tests
+        run: pixi run -e test test-cov
+
+      - name: Lint (ruff)
+        run: pixi run -e lint lint
+
+      - name: Type check (mypy)
+        run: pixi run -e lint typecheck
+
+  test_isolated:
+    name: Test wheel in isolation (no Node)
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          architecture: 'x64'
+
+      - name: Download extension package
+        uses: actions/download-artifact@v4
+        with:
+          name: extension-artifacts
+
+      - name: Install and test
+        run: |
+          set -eux
+          # Remove Node (twice: system + locally installed) to prove the
+          # prebuilt wheel installs and loads with no build toolchain present.
+          sudo rm -rf $(which node) || true
+          sudo rm -rf $(which node) || true
+
+          pip install "jupyterlab>=4.0.0,<5" nb_nebi_kernels*.whl
+
+          jupyter labextension list
+          jupyter labextension list 2>&1 | grep -ie "nb-nebi-kernels.*OK"
+          python -m jupyterlab.browser_check --no-browser-test
