@@ -1,0 +1,17 @@
+node_modules
+**/node_modules
+.pixi
+.venv
+.claude
+.jj
+.pytest_cache
+.mypy_cache
+.github
+**/lib
+src/nb_nebi_kernels/labextension
+experiment
+docs
+coverage
+**/*.d.ts
+**/package.json
+!/package.json

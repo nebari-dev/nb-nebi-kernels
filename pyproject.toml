@@ -32,7 +32,7 @@ Homepage = "https://github.com/nebari-dev/nb-nebi-kernels"
 Repository = "https://github.com/nebari-dev/nb-nebi-kernels"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling>=1.5.0", "hatch-vcs", "hatch-jupyter-builder>=0.5", "jupyterlab>=4.0.0,<5"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
@@ -46,6 +46,34 @@ packages = ["src/nb_nebi_kernels"]
 
 [tool.hatch.build.targets.wheel.shared-data]
 "src/nb_nebi_kernels/jupyter-config/jupyter_server_config.d/nb_nebi_kernels.json" = "etc/jupyter/jupyter_server_config.d/nb_nebi_kernels.json"
+"src/nb_nebi_kernels/labextension" = "share/jupyter/labextensions/nb-nebi-kernels"
+"install.json" = "share/jupyter/labextensions/nb-nebi-kernels/install.json"
+
+[tool.hatch.build.targets.sdist]
+artifacts = ["src/nb_nebi_kernels/labextension"]
+exclude = [".github", "experiment", "docs"]
+
+# Build the federated labextension when building a wheel/sdist. skip-if-exists
+# short-circuits when the bundle is already built (shipped in the sdist, or
+# built via `pixi run -e e2e build-labext`), so repeat builds don't rebuild it.
+[tool.hatch.build.hooks.jupyter-builder]
+dependencies = ["hatch-jupyter-builder>=0.5"]
+build-function = "hatch_jupyter_builder.npm_builder"
+ensured-targets = [
+    "src/nb_nebi_kernels/labextension/static/style.js",
+    "src/nb_nebi_kernels/labextension/package.json",
+]
+skip-if-exists = ["src/nb_nebi_kernels/labextension/static/style.js"]
+
+[tool.hatch.build.hooks.jupyter-builder.build-kwargs]
+build_cmd = "build:prod"
+npm = ["jlpm"]
+
+[tool.hatch.build.hooks.jupyter-builder.editable-build-kwargs]
+build_cmd = "install:extension"
+npm = ["jlpm"]
+source_dir = "src"
+build_dir = "src/nb_nebi_kernels/labextension"
 
 [tool.pixi.workspace]
 channels = ["conda-forge"]
@@ -75,6 +103,10 @@ mypy = ">=1.11.0"
 jupyterlab = ">=4.0.0"
 ipykernel = ">=6.0.0"
 pixi = "*"
+# Node for the labextension build (jlpm/webpack). Any maintained LTS works —
+# verified on Node 20, 22 and 25. The real build constraint is webpack,
+# pinned via package.json "resolutions"; Node version is not the issue.
+nodejs = "22.*"
 
 [tool.pixi.environments]
 default = { features = [], solve-group = "default" }
@@ -96,6 +128,10 @@ typecheck = "mypy src"
 # Copy jupyter config for editable installs (shared-data is wheel-only)
 dev-enable = "cp src/nb_nebi_kernels/jupyter-config/jupyter_server_config.d/nb_nebi_kernels.json $CONDA_PREFIX/etc/jupyter/jupyter_server_config.d/nb_nebi_kernels.json"
 lab = "jupyter lab --ServerApp.kernel_spec_manager_class=nb_nebi_kernels.NebiKernelSpecManager"
+# Build the federated labextension into src/nb_nebi_kernels/labextension/
+build-labext = "jlpm install && jlpm build:prod"
+# Rebuild on source changes (pair with `jupyter labextension develop`)
+watch-labext = "jlpm watch"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

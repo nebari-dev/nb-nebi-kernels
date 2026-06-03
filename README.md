@@ -65,7 +65,7 @@ src/nb_nebi_kernels/
 ```
 
 - **discovery.py** — Parses `nebi workspace list` output, calls `pixi workspace environment list` per workspace. Filters out missing workspaces. Returns structured data.
-- **launcher.py** — Clears PIXI_* environment variables to prevent inheriting parent context, then exec's `pixi run` in the workspace directory.
+- **launcher.py** — Clears PIXI\_\* environment variables to prevent inheriting parent context, then exec's `pixi run` in the workspace directory.
 - **manager.py** — Subclasses `KernelSpecManager`, implements `find_kernel_specs()` and `get_kernel_spec()`. Merges parent kernels with nebi-discovered ones.
 
 ## License

@@ -21,6 +21,9 @@ src/nb_nebi_kernels/_version.py
 .coverage
 htmlcov/
 .pytest_cache/
+.mypy_cache/
+coverage/
+junit.xml
 
 # Jupyter
 .ipynb_checkpoints/
@@ -34,3 +37,14 @@ nebi/
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+
+# JavaScript / JupyterLab extension build artifacts
+node_modules/
+lib/
+*.tsbuildinfo
+.yarn/
+.pnp.*
+.eslintcache
+.stylelintcache
+# Built federated labextension (shipped via the wheel, not committed)
+src/nb_nebi_kernels/labextension/

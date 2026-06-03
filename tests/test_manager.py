@@ -1,8 +1,8 @@
 """Tests for NebiKernelSpecManager."""
 
 import sys
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
 from unittest.mock import patch
 
 import pytest
@@ -195,6 +195,20 @@ class TestMissingKernelBranch:
             spec = manager.get_kernel_spec("nebi-data-science-gpu")
 
         assert spec.metadata["nebi_kernel_state"] == "missing-kernel"
+
+    def test_metadata_install_command(
+        self, workspaces: list[NebiWorkspace], envs_map: dict[str, list[str]]
+    ) -> None:
+        """Stub kernelspecs carry a copy-pasteable pixi install command."""
+        with _patched_discovery(workspaces, envs_map, env_has_kernel=False):
+            manager = NebiKernelSpecManager()
+            manager.find_kernel_specs()
+            spec = manager.get_kernel_spec("nebi-data-science-gpu")
+
+        assert spec.metadata["nebi_install_command"] == (
+            "pixi add --manifest-path /home/user/data-science/pixi.toml "
+            "--feature gpu ipykernel"
+        )
 
     def test_working_envs_get_ready_state(
         self, workspaces: list[NebiWorkspace], envs_map: dict[str, list[str]]

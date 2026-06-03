@@ -19,7 +19,7 @@ from nb_nebi_kernels.discovery import (
 logger = logging.getLogger(__name__)
 
 
-class NebiKernelSpecManager(KernelSpecManager):  # type: ignore[misc]
+class NebiKernelSpecManager(KernelSpecManager):
     """KernelSpecManager that discovers kernels from nebi-tracked pixi workspaces.
 
     Each (workspace, environment) pair becomes a launchable Jupyter kernel.
@@ -163,11 +163,15 @@ class NebiKernelSpecManager(KernelSpecManager):  # type: ignore[misc]
             "{connection_file}",
         ]
 
+        install_command = (
+            f"pixi add --manifest-path {ws.path}/pixi.toml --feature {env} ipykernel"
+        )
         metadata = {
             "nebi_workspace": ws.name,
             "nebi_workspace_path": ws.path,
             "pixi_environment": env,
             "nebi_kernel_state": "missing-kernel",
+            "nebi_install_command": install_command,
         }
 
         return KernelSpec(
