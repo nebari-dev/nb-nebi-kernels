@@ -125,3 +125,13 @@ class TestStubKernelMessages:
         assert "not ready" in joined
         assert "environment-not-installed" in joined
         assert "does not contain a Jupyter kernel" not in joined
+
+    def test_workspace_not_pulled_message_suggests_pull(self) -> None:
+        """Remote-only workspaces tell users to pull instead of install a kernel."""
+        joined = "\n".join(
+            build_message("demo-ws", "default", "workspace-not-pulled")
+        )
+
+        assert "has not been pulled locally" in joined
+        assert "nebi pull demo-ws" in joined
+        assert "pixi add" not in joined

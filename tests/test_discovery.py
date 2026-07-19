@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from nb_nebi_kernels.discovery import (
     EnvironmentProbe,
+    _parse_pixi_toml_environments,
     discover_environments,
     discover_kernel_specs,
     discover_remote_workspaces,
@@ -26,6 +27,7 @@ class TestDiscoverWorkspaces:
                 "path": "/home/user/data-science",
                 "origin_id": "ws-123",
                 "origin_tag": "v2",
+                "install_status": "installed",
                 "missing": False,
             },
             {"name": "web-app", "path": "/home/user/web-app", "missing": False},
@@ -40,6 +42,7 @@ class TestDiscoverWorkspaces:
         assert workspaces[0].name == "data-science"
         assert workspaces[0].path == "/home/user/data-science"
         assert workspaces[0].local_version == "v2"
+        assert workspaces[0].install_status == "installed"
         assert workspaces[1].name == "web-app"
         assert workspaces[1].path == "/home/user/web-app"
 
@@ -141,7 +144,12 @@ class TestDiscoverRemoteWorkspaces:
         """Uses NEBI_REMOTE_URL + NEBI_AUTH_TOKEN to discover remote workspaces."""
         workspaces_payload = json.dumps(
             [
-                {"id": "ws-1", "name": "remote-a", "status": "ready"},
+                {
+                    "id": "ws-1",
+                    "name": "remote-a",
+                    "status": "ready",
+                    "install_status": "not_installed",
+                },
                 {"id": "ws-2", "name": "remote-b", "status": "ready"},
             ]
         ).encode("utf-8")
@@ -230,6 +238,7 @@ gpu = {features = ["gpu", "default"]}
         assert workspaces[0].source == "remote"
         assert workspaces[0].remote_version == "v2"
         assert workspaces[0].environments == ["default", "gpu"]
+        assert workspaces[0].install_status == "not_installed"
         assert workspaces[1].remote_version == "release-a"
         assert workspaces[1].environments == []
 
@@ -239,6 +248,25 @@ gpu = {features = ["gpu", "default"]}
             workspaces = discover_remote_workspaces()
 
         assert workspaces == []
+
+    def test_pixi_toml_environment_parser_handles_structured_toml(self) -> None:
+        """TOML parsing handles quoted tables and pyproject pixi environment tables."""
+        environments = _parse_pixi_toml_environments("""
+[environments]
+default = { features = ["default"] }
+"gpu env" = { features = [
+    "gpu",
+    "default",
+] }
+
+[environments."quoted table"]
+features = ["docs"]
+
+[tool.pixi.environments]
+docs = { features = ["docs"] }
+""")
+
+        assert environments == ["default", "gpu env", "quoted table", "docs"]
 
 
 class TestProbeEnvironment:
@@ -252,6 +280,19 @@ class TestProbeEnvironment:
             missing_dependencies=[],
             reason="workspace-missing",
         )
+
+    def test_returns_not_installed_when_env_prefix_missing(self, tmp_path: Path) -> None:
+        """Probe uses the env prefix on disk to detect explicit pixi installs."""
+        (tmp_path / "pixi.toml").write_text("[project]\nname = 'demo'\n")
+        with patch("nb_nebi_kernels.discovery.subprocess.run") as mock_run:
+            probe = probe_environment(str(tmp_path), "default")
+
+        assert probe == EnvironmentProbe(
+            installed=False,
+            missing_dependencies=[],
+            reason="environment-not-installed",
+        )
+        mock_run.assert_not_called()
 
     def test_detects_missing_ipykernel(self) -> None:
         """Probe reports explicitly configured missing launch dependencies."""

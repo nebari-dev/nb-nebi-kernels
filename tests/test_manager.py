@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
-from jupyter_client.kernelspec import KernelSpec
+from jupyter_client.kernelspec import KernelSpec, NoSuchKernel
 
 from nb_nebi_kernels.discovery import (
     EnvironmentKernelSpec,
@@ -200,8 +200,21 @@ class TestNebiKernelSpecManager:
 
         assert "nebi-remote-only-gpu" in specs
         assert spec.metadata["nebi_state"] == "remote-not-pulled"
+        assert spec.metadata["nebi_kernel_state"] == "missing-kernel"
         assert spec.metadata["nebi_not_ready_reason"] == "workspace-not-pulled"
-        assert "nebi" not in spec.metadata
+        assert spec.argv == [
+            sys.executable,
+            "-m",
+            "nb_nebi_kernels.stub_kernel",
+            "--workspace",
+            "remote-only",
+            "--env",
+            "default",
+            "--reason",
+            "workspace-not-pulled",
+            "-f",
+            "{connection_file}",
+        ]
 
     def test_local_workspace_state_not_installed(self) -> None:
         """Local workspace env is marked local-not-installed when probe fails install check."""
@@ -222,6 +235,29 @@ class TestNebiKernelSpecManager:
         assert spec.metadata["nebi_state"] == "local-not-installed"
         assert spec.metadata["nebi_not_ready_reason"] == "environment-not-installed"
         assert "nebi_logo_reason" not in spec.metadata
+
+    def test_local_workspace_install_status_not_installed_skips_probe(self) -> None:
+        """Explicit nebi install status marks local envs not installed before pixi probing."""
+        local = NebiWorkspace(
+            name="project",
+            path="/tmp/project",
+            local_version="v1",
+            install_status="not_installed",
+        )
+        with (
+            patch("nb_nebi_kernels.manager.discover_workspaces", return_value=[local]),
+            patch("nb_nebi_kernels.manager.discover_remote_workspaces", return_value=[]),
+            patch("nb_nebi_kernels.manager.discover_environments", return_value=["default"]),
+            patch("nb_nebi_kernels.manager.probe_environment") as mock_probe,
+        ):
+            manager = NebiKernelSpecManager()
+            manager.find_kernel_specs()
+            spec = manager.get_kernel_spec("nebi-project-default")
+
+        mock_probe.assert_not_called()
+        assert spec.metadata["nebi_state"] == "local-not-installed"
+        assert spec.metadata["nebi_install_status"] == "not_installed"
+        assert spec.metadata["nebi_not_ready_reason"] == "environment-not-installed"
 
     def test_local_workspace_state_missing_dependencies(self) -> None:
         """Local workspace env is marked local-missing-deps when required deps are absent."""
@@ -348,6 +384,80 @@ class TestNebiKernelSpecManager:
 
         assert mock_local.call_count == 1
         assert mock_remote.call_count == 1
+
+    def test_parent_kernel_lookup_does_not_force_discovery_refresh(self) -> None:
+        """Parent kernel misses use the cache instead of forcing discovery every time."""
+        with (
+            patch("nb_nebi_kernels.manager.discover_workspaces") as mock_local,
+            patch("nb_nebi_kernels.manager.discover_remote_workspaces") as mock_remote,
+            patch.object(
+                NebiKernelSpecManager.__bases__[0],
+                "get_kernel_spec",
+                side_effect=NoSuchKernel("python3"),
+            ),
+        ):
+            mock_local.return_value = [NebiWorkspace(name="project", path="/tmp/project")]
+            mock_remote.return_value = []
+
+            manager = NebiKernelSpecManager()
+            manager.find_kernel_specs()
+            with pytest.raises(NoSuchKernel):
+                manager.get_kernel_spec("python3")
+
+        assert mock_local.call_count == 1
+        assert mock_remote.call_count == 1
+
+    def test_parent_kernel_lookup_skips_nebi_discovery(self) -> None:
+        """Parent kernel lookups do not run Nebi discovery."""
+        with (
+            patch("nb_nebi_kernels.manager.discover_workspaces") as mock_local,
+            patch("nb_nebi_kernels.manager.discover_remote_workspaces") as mock_remote,
+            patch.object(
+                NebiKernelSpecManager.__bases__[0],
+                "get_kernel_spec",
+                side_effect=NoSuchKernel("python3"),
+            ),
+        ):
+            manager = NebiKernelSpecManager()
+            with pytest.raises(NoSuchKernel):
+                manager.get_kernel_spec("python3")
+
+        mock_local.assert_not_called()
+        mock_remote.assert_not_called()
+
+    def test_nebi_cache_miss_forces_one_refresh(self) -> None:
+        """Fresh cache misses for Nebi kernels still force discovery for new workspaces."""
+        envs_map = {
+            "/tmp/old": ["default"],
+            "/tmp/new": ["default"],
+        }
+        with (
+            patch("nb_nebi_kernels.manager.discover_workspaces") as mock_local,
+            patch("nb_nebi_kernels.manager.discover_remote_workspaces", return_value=[]),
+            patch(
+                "nb_nebi_kernels.manager.discover_environments",
+                side_effect=lambda p: envs_map[p],
+            ),
+            patch(
+                "nb_nebi_kernels.manager.probe_environment",
+                return_value=EnvironmentProbe(installed=True, missing_dependencies=[]),
+            ),
+            patch(
+                "nb_nebi_kernels.manager.discover_kernel_specs",
+                return_value=[_installed_kernel()],
+            ),
+        ):
+            mock_local.side_effect = [
+                [NebiWorkspace(name="old", path="/tmp/old")],
+                [NebiWorkspace(name="new", path="/tmp/new")],
+            ]
+
+            manager = NebiKernelSpecManager()
+            manager.find_kernel_specs()
+            spec = manager.get_kernel_spec("nebi-new-default")
+
+        assert mock_local.call_count == 2
+        assert spec.metadata["nebi_workspace"] == "new"
 
     def test_invalidate_discovery_cache_forces_refresh(self) -> None:
         """Manual cache invalidation forces discovery on the next lookup."""

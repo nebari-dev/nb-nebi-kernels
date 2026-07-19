@@ -57,6 +57,15 @@ def build_message(
         ])
         return lines
 
+    if reason == "workspace-not-pulled":
+        return [
+            f"This Nebi workspace ('{workspace}') has not been pulled locally yet.",
+            *common,
+            f"Pull the workspace with `nebi pull {workspace}`.",
+            "",
+            "Then refresh kernels and select this kernel again.",
+        ]
+
     if reason != "kernel-not-installed":
         return [
             f"This Nebi kernel is not ready for pixi environment ('{env}').",
@@ -87,6 +96,8 @@ def _error_value(reason: str, env: str) -> str:
         return f"No Jupyter kernel installed in pixi env '{env}'"
     if reason == "missing-dependencies":
         return f"Missing required launch dependencies in pixi env '{env}'"
+    if reason == "workspace-not-pulled":
+        return "Nebi workspace has not been pulled locally"
     return f"Nebi kernel is not ready in pixi env '{env}'"
 
 

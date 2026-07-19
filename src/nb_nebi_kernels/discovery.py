@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -15,10 +16,16 @@ from urllib.request import Request, urlopen
 
 from jupyter_client.kernelspec import KernelSpec
 
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
+
 logger = logging.getLogger(__name__)
 
 PROBE_REASON_WORKSPACE_MISSING = "workspace-missing"
 PROBE_REASON_MANIFEST_MISSING = "manifest-missing"
+PROBE_REASON_ENVIRONMENT_NOT_INSTALLED = "environment-not-installed"
 PROBE_REASON_PIXI_MISSING = "pixi-missing"
 PROBE_REASON_PIXI_TIMEOUT = "pixi-timeout"
 PROBE_REASON_PIXI_LIST_FAILED = "pixi-list-failed"
@@ -34,6 +41,7 @@ class NebiWorkspace:
     local_version: str | None = None
     remote_version: str | None = None
     environments: list[str] | None = None
+    install_status: str | None = None
     source: str = "local"
 
 
@@ -58,6 +66,12 @@ def _parse_local_version(ws: dict[str, Any]) -> str | None:
     """Parse local pulled tag/version from `nebi workspace list --json` output."""
     origin_tag = ws.get("origin_tag")
     return origin_tag if isinstance(origin_tag, str) and origin_tag else None
+
+
+def _parse_install_status(ws: dict[str, Any]) -> str | None:
+    """Parse explicit workspace install status when provided by nebi."""
+    install_status = ws.get("install_status")
+    return install_status if isinstance(install_status, str) and install_status else None
 
 
 def _workspace_roots_from_env() -> list[str]:
@@ -154,6 +168,7 @@ def discover_workspaces(discovery_roots: list[str] | None = None) -> list[NebiWo
             name=name,
             path=path,
             local_version=_parse_local_version(ws),
+            install_status=_parse_install_status(ws),
             source="local",
         )
 
@@ -230,24 +245,34 @@ def _parse_pixi_toml_environments(content: str) -> list[str]:
     if not content:
         return []
 
+    try:
+        data = tomllib.loads(content)
+    except tomllib.TOMLDecodeError:
+        logger.debug("Failed to parse remote pixi.toml environments", exc_info=True)
+        return []
+
     names: list[str] = []
-    in_environments_section = False
-
-    for raw_line in content.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
+    for environments in (
+        data.get("environments"),
+        _nested_table(data, ("tool", "pixi", "environments")),
+    ):
+        if not isinstance(environments, dict):
             continue
-        if line.startswith("[") and line.endswith("]"):
-            in_environments_section = line[1:-1].strip() == "environments"
-            continue
-        if not in_environments_section or "=" not in line:
-            continue
-
-        key = line.split("=", 1)[0].strip().strip("\"'")
-        if key and key not in names:
-            names.append(key)
+        for name in environments:
+            if isinstance(name, str) and name and name not in names:
+                names.append(name)
 
     return names
+
+
+def _nested_table(data: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    """Return a nested table from parsed TOML data."""
+    current: Any = data
+    for key in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
 
 
 def _discover_remote_environments(remote_url: str, token: str, workspace_id: str) -> list[str]:
@@ -307,6 +332,7 @@ def _discover_remote_workspaces_from_api(remote_url: str, token: str) -> list[Ne
                 path="",
                 remote_version=_discover_remote_tag(remote_url, token, workspace_id),
                 environments=_discover_remote_environments(remote_url, token, workspace_id),
+                install_status=_parse_install_status(raw),
                 source="remote",
             )
         )
@@ -475,6 +501,13 @@ def probe_environment(
             installed=False,
             missing_dependencies=[],
             reason=PROBE_REASON_MANIFEST_MISSING,
+        )
+
+    if not os.path.isdir(os.path.join(workspace_path, ".pixi", "envs", env)):
+        return EnvironmentProbe(
+            installed=False,
+            missing_dependencies=[],
+            reason=PROBE_REASON_ENVIRONMENT_NOT_INSTALLED,
         )
 
     cmd = ["pixi", "list", "--json", "--no-install", "--manifest-path", manifest]
