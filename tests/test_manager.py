@@ -200,7 +200,7 @@ class TestNebiKernelSpecManager:
 
         assert "nebi-remote-only-gpu" in specs
         assert spec.metadata["nebi_state"] == "remote-not-pulled"
-        assert spec.metadata["nebi_kernel_state"] == "missing-kernel"
+        assert spec.metadata["nebi_kernel_state"] == "remote-not-pulled"
         assert spec.metadata["nebi_not_ready_reason"] == "workspace-not-pulled"
         assert spec.argv == [
             sys.executable,
@@ -236,8 +236,8 @@ class TestNebiKernelSpecManager:
         assert spec.metadata["nebi_not_ready_reason"] == "environment-not-installed"
         assert "nebi_logo_reason" not in spec.metadata
 
-    def test_local_workspace_install_status_not_installed_skips_probe(self) -> None:
-        """Explicit nebi install status marks local envs not installed before pixi probing."""
+    def test_local_workspace_install_status_is_metadata_only(self) -> None:
+        """Explicit nebi install status does not override local env probing."""
         local = NebiWorkspace(
             name="project",
             path="/tmp/project",
@@ -249,15 +249,21 @@ class TestNebiKernelSpecManager:
             patch("nb_nebi_kernels.manager.discover_remote_workspaces", return_value=[]),
             patch("nb_nebi_kernels.manager.discover_environments", return_value=["default"]),
             patch("nb_nebi_kernels.manager.probe_environment") as mock_probe,
+            patch(
+                "nb_nebi_kernels.manager.discover_kernel_specs",
+                return_value=[_installed_kernel()],
+            ),
         ):
+            mock_probe.return_value.installed = True
+            mock_probe.return_value.missing_dependencies = []
+            mock_probe.return_value.reason = None
             manager = NebiKernelSpecManager()
             manager.find_kernel_specs()
             spec = manager.get_kernel_spec("nebi-project-default")
 
-        mock_probe.assert_not_called()
-        assert spec.metadata["nebi_state"] == "local-not-installed"
+        mock_probe.assert_called_once_with("/tmp/project", "default", ())
+        assert spec.metadata["nebi_state"] == "ready"
         assert spec.metadata["nebi_install_status"] == "not_installed"
-        assert spec.metadata["nebi_not_ready_reason"] == "environment-not-installed"
 
     def test_local_workspace_state_missing_dependencies(self) -> None:
         """Local workspace env is marked local-missing-deps when required deps are absent."""
@@ -526,13 +532,13 @@ class TestMissingKernelBranch:
     def test_metadata_state_flag(
         self, workspaces: list[NebiWorkspace], envs_map: dict[str, list[str]]
     ) -> None:
-        """Stub kernelspecs carry nebi_kernel_state=missing-kernel for tooling."""
+        """Stub kernelspecs carry the resolved state for tooling."""
         with _patched_discovery(workspaces, envs_map, env_has_kernel=False):
             manager = NebiKernelSpecManager()
             manager.find_kernel_specs()
             spec = manager.get_kernel_spec("nebi-data-science-gpu")
 
-        assert spec.metadata["nebi_kernel_state"] == "missing-kernel"
+        assert spec.metadata["nebi_kernel_state"] == "local-missing-deps"
         assert spec.metadata["nebi_missing_dependencies"] == []
         assert spec.metadata["nebi_not_ready_reason"] == "kernel-not-installed"
 

@@ -144,12 +144,7 @@ class TestDiscoverRemoteWorkspaces:
         """Uses NEBI_REMOTE_URL + NEBI_AUTH_TOKEN to discover remote workspaces."""
         workspaces_payload = json.dumps(
             [
-                {
-                    "id": "ws-1",
-                    "name": "remote-a",
-                    "status": "ready",
-                    "install_status": "not_installed",
-                },
+                {"id": "ws-1", "name": "remote-a", "status": "ready"},
                 {"id": "ws-2", "name": "remote-b", "status": "ready"},
             ]
         ).encode("utf-8")
@@ -238,7 +233,6 @@ gpu = {features = ["gpu", "default"]}
         assert workspaces[0].source == "remote"
         assert workspaces[0].remote_version == "v2"
         assert workspaces[0].environments == ["default", "gpu"]
-        assert workspaces[0].install_status == "not_installed"
         assert workspaces[1].remote_version == "release-a"
         assert workspaces[1].environments == []
 

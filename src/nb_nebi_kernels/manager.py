@@ -10,7 +10,7 @@ import re
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from jupyter_client.kernelspec import KernelSpec, KernelSpecManager, NoSuchKernel
@@ -205,17 +205,6 @@ class NebiKernelSpecManager(KernelSpecManager):
                 )
             ]
 
-        if workspace.install_status and workspace.install_status != "installed":
-            return [
-                KernelEntry(
-                    workspace=workspace,
-                    environment=env,
-                    state="local-not-installed",
-                    missing_dependencies=[],
-                    not_ready_reason="environment-not-installed",
-                )
-            ]
-
         probe = probe_environment(
             workspace.path,
             env,
@@ -292,7 +281,6 @@ class NebiKernelSpecManager(KernelSpecManager):
             existing = merged.get(remote_ws.name)
             if existing:
                 existing.remote_version = remote_ws.remote_version or existing.remote_version
-                existing.install_status = existing.install_status or remote_ws.install_status
                 existing.environments = self._merge_environment_names(
                     existing.environments, remote_ws.environments
                 )
@@ -335,7 +323,7 @@ class NebiKernelSpecManager(KernelSpecManager):
 
         payload = json.dumps(summary, sort_keys=True, separators=(",", ":"))
         self._discovery_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-        self._discovered_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        self._discovered_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
     def invalidate_discovery_cache(self) -> None:
         """Force the next discovery call to recompute immediately."""
@@ -550,7 +538,7 @@ class NebiKernelSpecManager(KernelSpecManager):
             display_name=self._make_display_name(ws, env),
             language="no-op",
             resource_dir=resource_dir,
-            metadata=self._kernel_metadata(entry, kernel_state="missing-kernel"),
+            metadata=self._kernel_metadata(entry, kernel_state=entry.state),
         )
 
     def get_all_specs(self) -> dict[str, dict[str, Any]]:

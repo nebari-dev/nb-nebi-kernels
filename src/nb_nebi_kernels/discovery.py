@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import subprocess
-import sys
+import tomllib
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -15,11 +15,6 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from jupyter_client.kernelspec import KernelSpec
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
 
 logger = logging.getLogger(__name__)
 
@@ -332,7 +327,6 @@ def _discover_remote_workspaces_from_api(remote_url: str, token: str) -> list[Ne
                 path="",
                 remote_version=_discover_remote_tag(remote_url, token, workspace_id),
                 environments=_discover_remote_environments(remote_url, token, workspace_id),
-                install_status=_parse_install_status(raw),
                 source="remote",
             )
         )
